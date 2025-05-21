@@ -23,6 +23,7 @@ from Auth import views as v
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('login/',v.login_employee , name="login"),
+    path('logout/', v.logout_employee, name="logout"),
     path('getArticles/',views.get_articles , name="get"),
     path('deleteAricle/',views.delete_article , name="delete_article"),
     path('deleteComp/',views.delete_composant , name="delete_composant"),

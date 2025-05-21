@@ -12,7 +12,7 @@ class Composant(models.Model) :
     reference = models.CharField(max_length=500 , primary_key=True)
     quantite = models.IntegerField()
     description = models.TextField(max_length=1000 , null = True)
-    article = models.ManyToManyField(Article  , null = True, related_name="article")
+    article = models.ManyToManyField(Article, blank=True)
 
 class ArticleModifier(models.Model) : 
     article = models.ForeignKey(Article ,on_delete=models.CASCADE , null = False ,related_name="articleModifier")

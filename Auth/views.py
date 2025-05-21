@@ -8,25 +8,47 @@ from django.contrib.auth.hashers import check_password
 
 from Auth.models import Admin, SuperAdmin, Utilisateur
 import shortuuid
-
+from Auth.utils import generate_jwt_token
+import jwt
 
 @csrf_exempt
-def login_employee(request) : 
+def login_employee(request):
     if request.method == 'POST':
         data = json.loads(request.body)
         username = data.get("username")
         password = data.get("password")
-        user = User.objects.get(username = username)
-        superAdmin = SuperAdmin.objects.filter(user = user).exists()
-        admin = Admin.objects.filter(user = user).exists()
-        utilisateur = Utilisateur.objects.filter(user = user).exists()
-        token = shortuuid.uuid()
-        blocked_user = Admin.objects.filter(user = user).first() if admin else Utilisateur.objects.filter(user = user).first() if utilisateur else SuperAdmin.objects.filter(user = user).first()
-        if check_password(password, user.password) and (blocked_user.is_blocked ==False ) :
-                return JsonResponse({'message': 'Connexion réussie','superAdmin':superAdmin,'admin':admin,'utilisateur':utilisateur, 'token':token , 'username':username}, status=200)
+
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return JsonResponse({'message': 'Utilisateur non trouvé', 'status': 'failed'}, status=404)
+
+        superAdmin = SuperAdmin.objects.filter(user=user).exists()
+        admin = Admin.objects.filter(user=user).exists()
+        utilisateur = Utilisateur.objects.filter(user=user).exists()
+        blocked_user = Admin.objects.filter(user=user).first() if admin else Utilisateur.objects.filter(user=user).first() if utilisateur else SuperAdmin.objects.filter(user=user).first()
+
+        if check_password(password, user.password) and (blocked_user.is_blocked == False):
+            token = generate_jwt_token(user.id)
+            return JsonResponse({
+                'message': 'Connexion réussie',
+                'superAdmin': superAdmin,
+                'admin': admin,
+                'utilisateur': utilisateur,
+                'token': token,
+                'username': username
+            }, status=200)
         else:
-                return JsonResponse({'message': 'Mot de passe incorrect', 'status': 'failed'}, status=400)
-        
+            return JsonResponse({'message': 'Mot de passe incorrect ou utilisateur bloqué', 'status': 'failed'}, status=400)
+
+@csrf_exempt
+def logout_employee(request):
+    if request.method == 'POST':
+        # Aucun traitement côté serveur requis
+        return JsonResponse({'message': 'Déconnexion côté client réussie'}, status=200)
+    else:
+        return JsonResponse({'message': 'Méthode non autorisée'}, status=405)
+
 
 @csrf_exempt
 def get_users(request , is_admin , is_super_Admin): 
