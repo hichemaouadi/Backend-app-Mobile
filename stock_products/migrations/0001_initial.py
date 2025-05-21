@@ -36,7 +36,7 @@ class Migration(migrations.Migration):
                 ('quantite', models.IntegerField()),
                 ('description', models.TextField(max_length=1000, null=True)),
                 ('article', models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='article', to='stock_products.article')),
-                ('quantite', models.IntegerField()),
+                
                 
 
 
