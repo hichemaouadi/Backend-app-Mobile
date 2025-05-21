@@ -4,6 +4,103 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from stock_products.models import Article, ArticleModifier, Composant, ComposantModifier
 from django.shortcuts import get_object_or_404
+from django.utils.timezone import now
+from datetime import datetime, timedelta
+from django.db.models import Sum
+from django.db.models.functions import TruncDate
+
+
+
+from stock_products.models import (
+    Article, ArticleModifier,
+    Composant, ComposantModifier
+)
+
+JOURS_FR = {
+    'Monday': 'Lundi',
+    'Tuesday': 'Mardi',
+    'Wednesday': 'Mercredi',
+    'Thursday': 'Jeudi',
+    'Friday': 'Vendredi',
+    'Saturday': 'Samedi',
+    'Sunday': 'Dimanche',
+}
+
+def get_start_of_week(date):
+    return date - timedelta(days=date.weekday())
+# stock_products/views.py
+from django.http import JsonResponse
+
+def modifications_semaine(request):
+    # Exemple simple de réponse
+    data = {
+        "message": "Cette fonction modifications_semaine sera implémentée ici."
+    }
+    return JsonResponse(data)
+
+
+@csrf_exempt
+def modifications_semaine(request):
+    if request.method == "GET":
+        today = datetime.today().date()
+        debut_semaine_actuelle = get_start_of_week(today)
+        debut_semaine_derniere = debut_semaine_actuelle - timedelta(days=7)
+        fin_semaine_derniere = debut_semaine_actuelle - timedelta(days=1)
+
+        articles_modifs = (
+            ArticleModifier.objects
+            .annotate(jour=TruncDate('created_at'))
+            .values('jour', 'article__reference')
+            .annotate(total_quantite=Sum('nouvelle_quantite'))
+            .order_by('jour')
+        )
+
+        composants_modifs = (
+            ComposantModifier.objects
+            .annotate(jour=TruncDate('created_at'))
+            .values('jour', 'composant__reference')
+            .annotate(total_quantite=Sum('nouvelle_quantite'))
+            .order_by('jour')
+        )
+
+        semaine_derniere = {}
+        cette_semaine = {}
+
+        def ajouter_donnee(dico, item, type_modif, jour_date, ref):
+            jour_str = jour_date.strftime('%Y-%m-%d')
+            jour_anglais = jour_date.strftime('%A')
+            jour_nom = JOURS_FR.get(jour_anglais, jour_anglais)
+            cle_jour = f"{jour_nom} ({jour_str})"
+
+            dico.setdefault(cle_jour, [])
+            dico[cle_jour].append({
+                'type': type_modif,
+                'reference': ref,
+                'quantite': item['total_quantite'],
+            })
+
+        for item in articles_modifs:
+            jour_date = item['jour']
+            ref = item['article__reference']
+            if debut_semaine_actuelle <= jour_date <= today:
+                ajouter_donnee(cette_semaine, item, 'article', jour_date, ref)
+            elif debut_semaine_derniere <= jour_date <= fin_semaine_derniere:
+                ajouter_donnee(semaine_derniere, item, 'article', jour_date, ref)
+
+        for item in composants_modifs:
+            jour_date = item['jour']
+            ref = item['composant__reference']
+            if debut_semaine_actuelle <= jour_date <= today:
+                ajouter_donnee(cette_semaine, item, 'composant', jour_date, ref)
+            elif debut_semaine_derniere <= jour_date <= fin_semaine_derniere:
+                ajouter_donnee(semaine_derniere, item, 'composant', jour_date, ref)
+
+        return JsonResponse({
+            'semaine_derniere': semaine_derniere,
+            'cette_semaine': cette_semaine,
+        }, safe=False)
+
+    return JsonResponse({"error": "Méthode non autorisée"}, status=405)
 
 @csrf_exempt
 def get_articles(request):
@@ -88,14 +185,16 @@ def add_article(request):
             reference = data.get("reference")
             description = data.get("description")
             quantite = data.get("quantite")
+            ordre = data.get("ordre")
 
-            if not all([reference, description, quantite]):
+            if not all([reference, description, quantite,ordre]):
                 return JsonResponse({"error": "Tous les champs sont requis"}, status=400)
 
             article = Article.objects.create(
                 reference=reference,
                 description=description,
-                quantite=quantite
+                quantite=quantite,
+                ordre=ordre,
             )
             article.save()
 
@@ -129,45 +228,40 @@ def ajouter_piece(request):
 
 
 @csrf_exempt
-def add_composant(request): 
-    if request.method == "POST": 
+def add_composant(request):
+    if request.method == "POST":
         try:
             data = json.loads(request.body)
-            referencesA = data.get("referencesA")  # une liste de références d'articles
-            reference = data.get("reference")
+            referenceA = data.get("referenceA")  # Référence de l'article auquel rattacher le composant
+            reference = data.get("reference")    # Référence du composant
             quantite = data.get("quantite")
             description = data.get("description")
+            ordre = data.get("ordre")
 
-            # Vérification
-            if not all([reference, referencesA, quantite]):
+            if not all([reference, referenceA, quantite,ordre]):
                 return JsonResponse({"error": "Tous les champs sont requis"}, status=400)
-            if not isinstance(referencesA, list):
-                return JsonResponse({"error": "Le champ 'referencesA' doit être une liste"}, status=400)
 
-            # Création du composant
+            article = Article.objects.get(reference=referenceA)
+
             composant = Composant.objects.create(
                 reference=reference,
                 quantite=quantite,
-                description=description
+                description=description,
+                ordre=ordre,
             )
+            composant.article.add(article)
+            composant.save()
 
-            # Ajout des articles liés
-            articles = Article.objects.filter(reference__in=referencesA)
-            composant.article.set(articles)  # ManyToMany : set() ou add(*articles)
-
-            return JsonResponse({
-                "message": "Composant ajouté avec succès"
-            }, status=201)
+            return JsonResponse({"message": "Composant ajouté avec succès"}, status=201)
 
         except json.JSONDecodeError:
             return JsonResponse({"error": "Données JSON invalides"}, status=400)
         except Article.DoesNotExist:
-            return JsonResponse({"error": "Un ou plusieurs articles n'existent pas"}, status=404)
+            return JsonResponse({"error": "Article non trouvé"}, status=404)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Méthode non autorisée"}, status=405)
-
 @csrf_exempt
 def delete_article(request) : 
     if request.method == "DELETE" :

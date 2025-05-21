@@ -20,6 +20,8 @@ from django.urls import path
 from stock_products import views
 from Auth import views as v
 
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('login/',v.login_employee , name="login"),
@@ -43,5 +45,6 @@ urlpatterns = [
     path('delete_admin/<str:email>/',v.delete_admin , name="block_user"),
     path('getUsers/<str:is_admin>/<str:is_super_Admin>/',v.get_users , name="get_users"),
     path('api/ajouter-piece/',views.ajouter_piece , name="get_users"),
+    path('api/modifications_semaine/', views.modifications_semaine, name='modifications_semaine'),
 
 ]
