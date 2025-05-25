@@ -8,6 +8,7 @@ from django.utils.timezone import now
 from datetime import datetime, timedelta
 from django.db.models import Sum
 from django.db.models.functions import TruncDate
+from .models import Composant, ComposantModifier
 
 
 
@@ -123,39 +124,103 @@ def get_composant_modifier(request, reference):
         composants_list = list(composant_modifier.values())
         return JsonResponse({"composant_modifier": composants_list}, safe=False , status=200)
 
+
 @csrf_exempt
-def update_quantite(request) : 
-    if request.method == "POST" : 
+def update_quantite(request):
+    if request.method == "POST":
         data = json.loads(request.body)
         quantite = data.get("quantite")
         reference_article = data.get("reference_article")
-        article = get_object_or_404(Article, reference =reference_article)
-        article.quantite = quantite
+        mode = data.get("mode", "set")  # "add", "remove", ou "set"
+
+        article = get_object_or_404(Article, reference=reference_article)
+        ancienne_quantite = article.quantite
+
+        # Modification selon le mode
+        if mode == "add":
+            article.quantite += quantite
+        elif mode == "remove":
+            if article.quantite >= quantite:
+                article.quantite -= quantite
+            else:
+                return JsonResponse({"error": "Stock insuffisant"}, status=400)
+        elif mode == "set":
+            article.quantite = quantite
+        else:
+            # Cas où le mode n'est pas reconnu
+            return JsonResponse({"error": f"Mode inconnu: {mode}"}, status=400)
+
         article.save()
-        article_modifier = ArticleModifier.objects.create(
-            article = article,
-            nouvelle_quantite = quantite
+
+        # Historique
+        ArticleModifier.objects.create(
+            article=article,
+            nouvelle_quantite=article.quantite,
+            ancienne_quantite=ancienne_quantite,
+            mode=mode
         )
-        article_modifier.save()
-        return JsonResponse({"success": "modifié"}, safe=False , status = 200)
-    
+
+        return JsonResponse({
+            "success": "modifié",
+            "nouvelle_quantite": article.quantite,
+            "ancienne_quantite": ancienne_quantite,
+            "mode": mode
+        }, safe=False, status=200)
+    else:
+        return JsonResponse({"error": "Méthode non autorisée"}, status=405)
+
 @csrf_exempt
-def update_quantiteC(request) : 
-    if request.method == "POST" : 
-        data = json.loads(request.body)
-        quantite = data.get("quantite")
-        reference_c = data.get("reference_c")
-        
-        composant = get_object_or_404(Composant, reference =reference_c)
-        composant.quantite = quantite
-        composant.save()
-        Composant_modifier = ComposantModifier.objects.create(
-            composant = composant,
-            nouvelle_quantite = quantite
-        )
-        Composant_modifier.save()
-        return JsonResponse({"success": "modifié"}, safe=False , status = 200)
- 
+def update_quantiteC(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            quantite = data.get("quantite")
+            reference_c = data.get("reference_c")
+            mode = data.get("mode", "set")  # "add", "remove", ou "set"
+
+            if quantite is None or reference_c is None:
+                return JsonResponse({"error": "Quantité ou référence manquante"}, status=400)
+
+            composant = get_object_or_404(Composant, reference=reference_c)
+            ancienne_quantite = composant.quantite  # AVANT modification
+
+            # Modification selon le mode
+            if mode == "add":
+                composant.quantite += quantite
+            elif mode == "remove":
+                if composant.quantite >= quantite:
+                    composant.quantite -= quantite
+                else:
+                    return JsonResponse({"error": "Stock insuffisant"}, status=400)
+            elif mode == "set":
+                composant.quantite = quantite
+            else:
+                return JsonResponse({"error": f"Mode inconnu: {mode}"}, status=400)
+
+            composant.save()
+
+            # Historique
+            ComposantModifier.objects.create(
+                composant=composant,
+                nouvelle_quantite=composant.quantite,
+                ancienne_quantite=ancienne_quantite,
+                mode=mode
+            )
+
+            return JsonResponse(
+                {
+                    "success": "modifié",
+                    "nouvelle_quantite": composant.quantite,
+                    "ancienne_quantite": ancienne_quantite,
+                    "mode": mode
+                },
+                safe=False,
+                status=200,
+            )
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    else:
+        return JsonResponse({"error": "Méthode non autorisée"}, status=405)
 @csrf_exempt
 def get_composant(request):
     if request.method == "POST":
